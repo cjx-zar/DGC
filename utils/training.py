@@ -15,6 +15,7 @@ from models.utils.continual_model import ContinualModel
 
 from utils.loggers import *
 from utils.status import ProgressBar
+from utils.metrics import backward_transfer, forward_transfer, forgetting
 
 try:
     import wandb
@@ -33,6 +34,32 @@ def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> No
     outputs[:, 0:k * dataset.N_CLASSES_PER_TASK] = -float('inf')
     outputs[:, (k + 1) * dataset.N_CLASSES_PER_TASK:
                dataset.N_TASKS * dataset.N_CLASSES_PER_TASK] = -float('inf')
+
+
+def evaluate_train(model: ContinualModel, dataset: ContinualDataset, last=False):
+    """
+    Evaluates the accuracy of the model for each past task.
+    :param model: the model to be evaluated
+    :param dataset: the continual dataset at hand
+    :return: a tuple of lists, containing the class-il
+             and task-il accuracy for each task
+    """
+    status = model.net.training
+    model.net.eval()
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for i, data in enumerate(dataset.train_loader):
+            inputs, labels, not_aug_inputs = data
+            inputs, labels = inputs.to(model.device), labels.to(model.device)
+            outputs = model(inputs)
+
+            _, pred = torch.max(outputs.data, 1)
+            correct += torch.sum(pred == labels).item()
+            total += labels.shape[0]
+    
+    print('Current task trainset acc: {}'.format(round(correct / total, 4)))
+    model.net.train(status)
 
 
 def evaluate(model: ContinualModel, dataset: ContinualDataset, last=False) -> Tuple[list, list]:
@@ -107,6 +134,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         if model.NAME != 'icarl' and model.NAME != 'pnn':
             random_results_class, random_results_task = evaluate(model, dataset_copy)
 
+    mean_acc_list = []
     print(file=sys.stderr)
     for t in range(dataset.N_TASKS):
         model.net.train()
@@ -123,6 +151,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
         for epoch in range(model.args.n_epochs):
             if args.model == 'joint':
                 continue
+            loss = 0.0
             for i, data in enumerate(train_loader):
                 if args.debug_mode and i > 3:
                     break
@@ -132,28 +161,39 @@ def train(model: ContinualModel, dataset: ContinualDataset,
                     labels = labels.to(model.device)
                     not_aug_inputs = not_aug_inputs.to(model.device)
                     logits = logits.to(model.device)
-                    loss = model.meta_observe(inputs, labels, not_aug_inputs, logits)
+                    loss += model.meta_observe(inputs, labels, not_aug_inputs, logits)
                 else:
                     inputs, labels, not_aug_inputs = data
                     inputs, labels = inputs.to(model.device), labels.to(
                         model.device)
                     not_aug_inputs = not_aug_inputs.to(model.device)
-                    loss = model.meta_observe(inputs, labels, not_aug_inputs)
+                    loss += model.meta_observe(inputs, labels, not_aug_inputs)
                 assert not math.isnan(loss)
-                progress_bar.prog(i, len(train_loader), epoch, t, loss)
+                # progress_bar.prog(i, len(train_loader), epoch, t, loss)
+
+            # progress_bar.prog(1, len(train_loader), epoch, t, loss / len(train_loader), lossa / len(train_loader), lossb / len(train_loader))
+            # progress_bar.prog(1, len(train_loader), epoch, t, loss / len(train_loader), 0, 0)
 
             if scheduler is not None:
                 scheduler.step()
 
-        if hasattr(model, 'end_task'):
-            model.end_task(dataset)
+            if hasattr(model, 'epoch_task'):
+                model.epoch_task()
+
+            # evaluate_train(model, dataset)
 
         accs = evaluate(model, dataset)
         results.append(accs[0])
         results_mask_classes.append(accs[1])
 
+        if hasattr(model, 'end_task'):
+            model.end_task(dataset)
+
+        # for i in range(len(accs[0])):
+        #     print('Accuracy for single task {} is {} %\n'.format(i+1, accs[0][i]))
         mean_acc = np.mean(accs, axis=1)
-        print_mean_accuracy(mean_acc, t + 1, dataset.SETTING)
+        mean_acc_list.append(round(mean_acc[0], 2))
+        # print_mean_accuracy(mean_acc, t + 1, dataset.SETTING)
 
         if not args.disable_log:
             logger.log(mean_acc)
@@ -166,8 +206,25 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
             wandb.log(d2)
 
+    print("Every task results: ", mean_acc_list)
+    print("Total average: ", round(sum(mean_acc_list)/len(mean_acc_list), 2))
 
+    bwt = backward_transfer(results)
+    forgetting_result = forgetting(results)
+    fwt = forward_transfer(results, random_results_class)
 
+    bwt_mask_classes = backward_transfer(results_mask_classes)
+    forgetting_mask_classes = forgetting(results_mask_classes)
+    fwt_mask_classes = forward_transfer(results_mask_classes, random_results_task)
+
+    print("FF: ", round(forgetting_result, 2))
+    print("BWT: ", round(bwt, 2))
+    print("FWT: ", round(fwt, 2))
+
+    print("FF_mask: ", round(forgetting_mask_classes, 2))
+    print("BWT_mask: ", round(bwt_mask_classes, 2))
+    print("FWT_mask: ", round(fwt_mask_classes, 2))
+    
     if not args.disable_log and not args.ignore_other_metrics:
         logger.add_bwt(results, results_mask_classes)
         logger.add_forgetting(results, results_mask_classes)

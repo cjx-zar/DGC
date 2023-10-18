@@ -7,6 +7,7 @@ import torch
 # from utils.spkdloss import SPKDLoss
 from datasets import get_dataset
 from torch.nn import functional as F
+from copy import deepcopy
 
 from models.utils.continual_model import ContinualModel
 from utils.args import add_management_args, add_experiment_args, add_rehearsal_args, ArgumentParser
@@ -14,6 +15,7 @@ from utils.augmentations import strong_aug
 from utils.batch_norm import bn_track_stats
 from utils.buffer import Buffer
 from utils.simclrloss import SupConLoss
+from models.utils.svrg_cl import SVRG_CL
 
 
 def get_parser() -> ArgumentParser:
@@ -24,7 +26,8 @@ def get_parser() -> ArgumentParser:
     add_rehearsal_args(parser)
     parser.add_argument('--alpha', type=float, required=True, help='Penalty weight.')
     parser.add_argument('--beta', type=float, required=True, help='Penalty weight.')
-
+    
+    parser.add_argument('--svrg', type=bool, default=False, help='Use svrg_cl or not.')
     parser.add_argument('--gamma', type=float, default=0.85)
     parser.add_argument('--lambd', type=float, default=0.1)
     parser.add_argument('--eta', type=float, default=0.1)
@@ -33,7 +36,6 @@ def get_parser() -> ArgumentParser:
     parser.add_argument('--simclr_temp', type=float, default=5)
     parser.add_argument('--simclr_batch_size', type=int, default=64)
     parser.add_argument('--simclr_num_aug', type=int, default=2)
-
     return parser
 
 
@@ -48,6 +50,7 @@ class XDer(ContinualModel):
         self.tasks = get_dataset(args).N_TASKS
         self.task = 0
         self.update_counter = torch.zeros(self.args.buffer_size).to(self.device)
+        self.Tot_grad = SVRG_CL(self.loss, self.device)
 
         denorm = get_dataset(args).get_denormalization_transform()
         self.dataset_mean, self.dataset_std = denorm.mean, denorm.std
@@ -59,7 +62,8 @@ class XDer(ContinualModel):
             self.args.start_from = 0
 
     def end_task(self, dataset):
-
+        if self.args.svrg:
+            self.Tot_grad.update_history(self.net, dataset.train_loader)
         tng = self.training
         self.train()
 
@@ -271,6 +275,16 @@ class XDer(ContinualModel):
         loss = loss_stream + loss_der + loss_derpp + loss_cons + loss_constr_futu + loss_constr_past
 
         loss.backward()
+
+        if self.args.svrg:
+            if not self.buffer.is_empty():
+                # 利用Memory和history_grad按照SVRG的思想进行一步梯度下降
+                buf_idx, buf_inputs, buf_labels, buf_logits, buf_tl = self.buffer.get_data(
+                self.args.minibatch_size * 4, transform=self.transform, return_index=True)
+                self.Tot_grad.update_and_replay(self.net, self.lastnet, buf_inputs, buf_labels)
+
+            self.lastnet = deepcopy(self.net)
+
         self.opt.step()
 
         return loss.item()

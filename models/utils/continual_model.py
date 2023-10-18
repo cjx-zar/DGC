@@ -59,7 +59,7 @@ class ContinualModel(nn.Module):
         return ret
 
     def observe(self, inputs: torch.Tensor, labels: torch.Tensor,
-                not_aug_inputs: torch.Tensor) -> float:
+                not_aug_inputs: torch.Tensor, idx: int, epoch: int, cur_task:int) -> float:
         """
         Compute a training step over a given batch of examples.
         :param inputs: batch of examples
