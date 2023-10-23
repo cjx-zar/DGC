@@ -37,7 +37,8 @@ class TinyImagenet(Dataset):
 
         if download:
             if os.path.isdir(root) and len(os.listdir(root)) > 0:
-                print('Download not needed, files already on disk.')
+                pass
+                # print('Download not needed, files already on disk.')
             else:
                 from onedrivedownloader import download
 
@@ -135,6 +136,10 @@ class SequentialTinyImagenet(ContinualDataset):
 
         train_dataset = MyTinyImagenet(base_path() + 'TINYIMG',
                                        train=True, download=True, transform=transform)
+        
+        notrsf_train_dataset = MyTinyImagenet(base_path() + 'TINYIMG',
+                                       train=True, download=True, transform=test_transform)
+        
         if self.args.validation:
             train_dataset, test_dataset = get_train_val(train_dataset,
                                                         test_transform, self.NAME)
@@ -142,7 +147,7 @@ class SequentialTinyImagenet(ContinualDataset):
             test_dataset = TinyImagenet(base_path() + 'TINYIMG',
                                         train=False, download=True, transform=test_transform)
 
-        train, test = store_masked_loaders(train_dataset, test_dataset, self)
+        train, test = store_masked_loaders(train_dataset, test_dataset, self, notrsf_train_dataset)
         return train, test
 
     @staticmethod

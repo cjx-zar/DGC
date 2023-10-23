@@ -27,6 +27,7 @@ class ContinualDataset:
         :param args: the arguments which contains the hyperparameters
         """
         self.train_loader = None
+        self.list_train_loader = []
         self.test_loaders = []
         self.i = 0
         self.args = args
@@ -97,8 +98,8 @@ class ContinualDataset:
         raise NotImplementedError
 
 
-def store_masked_loaders(train_dataset: Dataset, test_dataset: Dataset,
-                         setting: ContinualDataset) -> Tuple[DataLoader, DataLoader]:
+def store_masked_loaders(train_dataset: Dataset, test_dataset: Dataset, 
+                         setting: ContinualDataset, notrsf_train_dataset: Dataset=None) -> Tuple[DataLoader, DataLoader]:
     """
     Divides the dataset into tasks.
     :param train_dataset: train dataset
@@ -122,6 +123,11 @@ def store_masked_loaders(train_dataset: Dataset, test_dataset: Dataset,
     test_loader = DataLoader(test_dataset,
                              batch_size=setting.args.batch_size, shuffle=False, num_workers=4)
     setting.test_loaders.append(test_loader)
+
+    if notrsf_train_dataset is not None:
+        setting.list_train_loader.append(DataLoader(notrsf_train_dataset,
+                              batch_size=setting.args.batch_size, shuffle=True, num_workers=4))
+    
     setting.train_loader = train_loader
 
     setting.i += setting.N_CLASSES_PER_TASK

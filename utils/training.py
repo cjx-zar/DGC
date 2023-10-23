@@ -35,6 +35,22 @@ def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> No
     outputs[:, (k + 1) * dataset.N_CLASSES_PER_TASK:
                dataset.N_TASKS * dataset.N_CLASSES_PER_TASK] = -float('inf')
 
+def evaluate_loss(model: ContinualModel, dataset: ContinualDataset):
+    status = model.net.training
+    model.net.eval()
+    loss = 0.0
+    cnt = 0
+    for k, loader in enumerate(dataset.list_train_loader):
+        with torch.no_grad():
+            cnt += len(loader)
+            for i, data in enumerate(loader):
+                inputs, labels, not_aug_inputs = data
+                inputs, labels = inputs.to(model.device), labels.to(model.device)
+                outputs = model(inputs)
+                loss += model.loss(outputs, labels).item()
+
+    model.net.train(status)
+    return loss / cnt
 
 def evaluate_train(model: ContinualModel, dataset: ContinualDataset, last=False):
     """
@@ -135,6 +151,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             random_results_class, random_results_task = evaluate(model, dataset_copy)
 
     mean_acc_list = []
+    loss_trace = [[] for i in range(dataset.N_TASKS)]
     print(file=sys.stderr)
     for t in range(dataset.N_TASKS):
         model.net.train()
@@ -180,6 +197,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             if hasattr(model, 'epoch_task'):
                 model.epoch_task()
 
+            # loss_trace[t].append(evaluate_loss(model, dataset))
             # evaluate_train(model, dataset)
 
         accs = evaluate(model, dataset)
@@ -208,6 +226,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
     print("Every task results: ", mean_acc_list)
     print("Total average: ", round(sum(mean_acc_list)/len(mean_acc_list), 2))
+    print("loss_trace: \n", loss_trace)
 
     bwt = backward_transfer(results)
     forgetting_result = forgetting(results)

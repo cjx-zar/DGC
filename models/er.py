@@ -56,9 +56,6 @@ class Er(ContinualModel):
 
         self.opt.step()
 
-        self.buffer.add_data(examples=not_aug_inputs,
-                             labels=labels[:real_batch_size])
-
         return loss.item()
 
     def end_task(self, dataset):
