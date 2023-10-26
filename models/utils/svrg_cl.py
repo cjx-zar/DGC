@@ -57,6 +57,7 @@ class SVRG_CL:
         else:
             self.history_grad *= (self.task_cnt - 1) / self.task_cnt
             self.history_grad += curgrad / len(loader) / self.task_cnt
+        net.zero_grad()
         net.train(status)
 
     def update_history_batch(self, net, inputs, labels):
@@ -76,6 +77,7 @@ class SVRG_CL:
         else:
             self.history_grad *= (self.task_cnt - 1) / self.task_cnt
             self.history_grad += curgrad / self.task_cnt
+        net.zero_grad()
         net.train(status)
 
     def _cac_grad(self, net, inputs, labels):

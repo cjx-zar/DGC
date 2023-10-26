@@ -57,10 +57,10 @@ class SVRGER(ContinualModel):
         self.buffer.add_data(examples=not_aug_inputs,
                              labels=labels[:real_batch_size])
         
+        self.opt.step()
+
         if self.args.svrg:
             self.Tot_grad.update_history_batch(self.net, not_aug_inputs, labels[:real_batch_size])
-
-        self.opt.step()
 
         return loss.item()
 

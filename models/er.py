@@ -49,7 +49,7 @@ class Er(ContinualModel):
         if self.args.svrg:
             if not self.buffer.is_empty():
                 # 利用Memory和history_grad按照SVRG的思想进行一步梯度下降
-                buf_inputs, buf_labels = self.buffer.get_data(self.args.minibatch_size * 4)
+                buf_inputs, buf_labels = self.buffer.get_data(self.args.minibatch_size)
                 self.Tot_grad.update_and_replay(self.net, self.lastnet, buf_inputs, buf_labels)
 
             self.lastnet = deepcopy(self.net)

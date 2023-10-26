@@ -12,7 +12,7 @@ def get_device() -> torch.device:
     Returns the GPU device if available else CPU.
     """
     if torch.cuda.is_available():
-        return torch.device("cuda:4")
+        return torch.device("cuda:2")
     try:
         if torch.backends.mps.is_available() and torch.backends.mps.is_built():
             return torch.device("mps")

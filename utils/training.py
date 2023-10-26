@@ -166,6 +166,7 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
         scheduler = dataset.get_scheduler(model, args)
         for epoch in range(model.args.n_epochs):
+            # loss_trace[t].append(evaluate_loss(model, dataset))
             if args.model == 'joint':
                 continue
             loss = 0.0
@@ -197,15 +198,14 @@ def train(model: ContinualModel, dataset: ContinualDataset,
             if hasattr(model, 'epoch_task'):
                 model.epoch_task()
 
-            # loss_trace[t].append(evaluate_loss(model, dataset))
             # evaluate_train(model, dataset)
-
-        accs = evaluate(model, dataset)
-        results.append(accs[0])
-        results_mask_classes.append(accs[1])
 
         if hasattr(model, 'end_task'):
             model.end_task(dataset)
+        
+        accs = evaluate(model, dataset)
+        results.append(accs[0])
+        results_mask_classes.append(accs[1])
 
         # for i in range(len(accs[0])):
         #     print('Accuracy for single task {} is {} %\n'.format(i+1, accs[0][i]))
@@ -230,19 +230,19 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
     bwt = backward_transfer(results)
     forgetting_result = forgetting(results)
-    fwt = forward_transfer(results, random_results_class)
-
     bwt_mask_classes = backward_transfer(results_mask_classes)
     forgetting_mask_classes = forgetting(results_mask_classes)
-    fwt_mask_classes = forward_transfer(results_mask_classes, random_results_task)
-
+    
     print("FF: ", round(forgetting_result, 2))
     print("BWT: ", round(bwt, 2))
-    print("FWT: ", round(fwt, 2))
-
     print("FF_mask: ", round(forgetting_mask_classes, 2))
     print("BWT_mask: ", round(bwt_mask_classes, 2))
-    print("FWT_mask: ", round(fwt_mask_classes, 2))
+
+    if model.NAME != 'icarl' and model.NAME != 'pnn':
+        fwt = forward_transfer(results, random_results_class)
+        fwt_mask_classes = forward_transfer(results_mask_classes, random_results_task)
+        print("FWT: ", round(fwt, 2))
+        print("FWT_mask: ", round(fwt_mask_classes, 2))
     
     if not args.disable_log and not args.ignore_other_metrics:
         logger.add_bwt(results, results_mask_classes)
